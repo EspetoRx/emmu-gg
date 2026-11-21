@@ -463,6 +463,35 @@ mod tests {
     }
 
     #[test]
+    fn psg_audio_is_not_silent() {
+        // Programa o canal 0 do SN76489 com volume máximo e entra em loop.
+        // Sem isso o PSG permanece com atenuação 15 (silêncio), então o teste
+        // prova que o resampler de áudio gera amostras audíveis.
+        let mut rom = minimal_rom();
+        let code = [
+            0x3E, 0x80, 0xD3, 0x7F, // ld a,$80 ; out ($7f),a  (latch Tone0)
+            0x3E, 0x04, 0xD3, 0x7F, // ld a,$04 ; out ($7f),a  (Tone0 high bits)
+            0x3E, 0x90, 0xD3, 0x7F, // ld a,$90 ; out ($7f),a  (Volume0 = 0)
+            0x18, 0xFE, // jr $
+        ];
+        rom[..code.len()].copy_from_slice(&code);
+
+        let mut core = GgCore::new(&rom).expect("ROM com PSG deve carregar");
+        let mut total_samples = 0;
+        let mut peak = 0.0_f32;
+        for _ in 0..180 {
+            core.run_frame(true).expect("deve avançar um frame");
+            for sample in core.take_audio_samples() {
+                total_samples += 1;
+                peak = peak.max(sample.abs());
+            }
+        }
+
+        assert!(total_samples > 0, "core GG não gerou amostras de áudio");
+        assert!(peak > 0.01, "core GG gerou apenas silêncio (pico={peak})");
+    }
+
+    #[test]
     fn save_state_round_trip() {
         let mut core = GgCore::new(&minimal_rom()).unwrap();
         core.run_frame(true).unwrap();
